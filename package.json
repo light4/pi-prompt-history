@@ -1,8 +1,8 @@
 {
-  "name": "pi-fzf-history",
+  "name": "pi-prompt-history",
   "version": "0.1.0",
   "private": true,
-  "description": "Fuzzy Ctrl+R prompt history for Pi",
+  "description": "Fuzzy prompt history for Pi",
   "type": "module",
   "pi": {
     "extensions": [

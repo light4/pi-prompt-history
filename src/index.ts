@@ -88,11 +88,14 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 		return;
 	}
 
+	let requestRender: (() => void) | undefined;
 	const selected = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
+		requestRender = () => tui.requestRender();
 		const container = new Container();
 		const input = new Input();
 		let selectList: SelectList;
 		let matches = history;
+		let selectedIndex = 0;
 
 		const createList = () => {
 			const items: SelectItem[] = matches.slice(0, 200).map((item) => ({
@@ -107,20 +110,20 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 				scrollInfo: (text) => theme.fg("dim", text),
 				noMatch: (text) => theme.fg("warning", text),
 			});
-			selectList.onSelect = (item) => done(item.value);
-			selectList.onCancel = () => done(null);
+			selectList.setSelectedIndex(selectedIndex);
 		};
 
 		const refresh = () => {
 			matches = rankHistory(history, input.getValue());
+			selectedIndex = 0;
 			createList();
 		};
 
-		input.onSubmit = () => {
-			const item = selectList.getSelectedItem();
-			if (item) done(item.value);
+		const moveSelection = (delta: number) => {
+			if (matches.length === 0) return;
+			selectedIndex = (selectedIndex + delta + matches.length) % matches.length;
+			selectList.setSelectedIndex(selectedIndex);
 		};
-		input.onEscape = () => done(null);
 		createList();
 
 		return {
@@ -147,10 +150,22 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 				selectList.invalidate();
 			},
 			handleInput(data: string) {
-				if (matchesKey(data, Key.up) || matchesKey(data, Key.down) || matchesKey(data, Key.pageUp) || matchesKey(data, Key.pageDown)) {
-					selectList.handleInput(data);
-				} else if (matchesKey(data, Key.enter) || matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-					selectList.handleInput(data);
+				// Handle picker controls here instead of delegating to SelectList. Its
+				// handler reads the application's keybinding manager, which may not
+				// match the raw key events delivered to a custom overlay.
+				if (matchesKey(data, Key.up)) {
+					moveSelection(-1);
+				} else if (matchesKey(data, Key.down)) {
+					moveSelection(1);
+				} else if (matchesKey(data, Key.pageUp)) {
+					moveSelection(-10);
+				} else if (matchesKey(data, Key.pageDown)) {
+					moveSelection(10);
+				} else if (matchesKey(data, Key.enter)) {
+					const item = selectList.getSelectedItem();
+					if (item) done(item.value);
+				} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+					done(null);
 				} else {
 					input.handleInput(data);
 					refresh();
@@ -160,7 +175,12 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 		};
 	}, { overlay: true, overlayOptions: { width: "80%", minWidth: 40, maxHeight: "70%" } });
 
-	if (selected !== null) ctx.ui.setEditorText(selected);
+	if (selected !== null) {
+		ctx.ui.setEditorText(selected);
+		// setEditorText updates the editor state but does not schedule a repaint.
+		// The picker close already rendered, so explicitly repaint the restored text.
+		requestRender?.();
+	}
 }
 
 export default function promptHistoryExtension(pi: ExtensionAPI) {

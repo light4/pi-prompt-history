@@ -1,6 +1,6 @@
-# pi-fzf-history
+# pi-prompt-history
 
-A Pi extension that restores a previous prompt with an **fzf-like fuzzy picker**.
+A Pi extension that restores a previous prompt with a fuzzy picker.
 
 ## Use
 
@@ -17,8 +17,8 @@ The search ranks in-order character matches and gives preference to consecutive 
 Pi auto-discovers an extension whose directory contains `index.ts`. Symlink this repository's source directory into the global extension directory:
 
 ```sh
-ln -sfn /Users/chenyuanning/sources/pi-fzf-history/src \
-  ~/.pi/agent/extensions/pi-fzf-history
+ln -sfn /Users/chenyuanning/sources/pi-prompt-history/src \
+  ~/.pi/agent/extensions/pi-prompt-history
 ```
 
 Then start Pi or run `/reload` in an existing session.
@@ -26,7 +26,7 @@ Then start Pi or run `/reload` in an existing session.
 For a one-off test without installing it globally:
 
 ```sh
-pi -e /Users/chenyuanning/sources/pi-fzf-history/src/index.ts
+pi -e /Users/chenyuanning/sources/pi-prompt-history/src/index.ts
 ```
 
 ## Scope and privacy
