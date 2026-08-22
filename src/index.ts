@@ -1,10 +1,41 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
-import { Container, Input, Key, type SelectItem, SelectList, Text, matchesKey } from "@earendil-works/pi-tui";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import { CONFIG_DIR_NAME, DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Container, Input, Key, type KeyId, type SelectItem, SelectList, Text, matchesKey } from "@earendil-works/pi-tui";
 
 interface HistoryItem {
 	text: string;
 	recency: number;
+}
+
+interface PromptHistoryConfig {
+	shortcut?: string;
+}
+
+const DEFAULT_SHORTCUT = Key.ctrl("r");
+
+/**
+ * Resolve the picker shortcut. An environment variable takes precedence over
+ * the user config so callers can change the binding for a single Pi launch.
+ */
+export function resolveShortcut(config: PromptHistoryConfig, environmentShortcut?: string): KeyId {
+	const shortcut = environmentShortcut ?? config.shortcut ?? DEFAULT_SHORTCUT;
+	return typeof shortcut === "string" && shortcut.trim() ? shortcut.trim() as KeyId : DEFAULT_SHORTCUT;
+}
+
+function loadConfig(): PromptHistoryConfig {
+	const path = join(homedir(), CONFIG_DIR_NAME, "agent", "pi-prompt-history.json");
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+		return parsed !== null && typeof parsed === "object" ? parsed as PromptHistoryConfig : {};
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			console.warn(`pi-prompt-history: unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		return {};
+	}
 }
 
 /**
@@ -184,7 +215,7 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 }
 
 export default function promptHistoryExtension(pi: ExtensionAPI) {
-	pi.registerShortcut(Key.ctrl("r"), {
+	pi.registerShortcut(resolveShortcut(loadConfig(), process.env.PI_PROMPT_HISTORY_SHORTCUT), {
 		description: "Fuzzy-search prompt history",
 		handler: showHistory,
 	});

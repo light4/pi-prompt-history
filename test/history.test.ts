@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fuzzyScore, rankHistory } from "../src/index.ts";
+import { fuzzyScore, rankHistory, resolveShortcut } from "../src/index.ts";
 
 test("fuzzyScore accepts in-order subsequences and rejects out-of-order text", () => {
 	assert.notEqual(fuzzyScore("please inspect the auth module", "pam"), undefined);
@@ -14,8 +14,13 @@ test("fuzzyScore prefers consecutive matches", () => {
 	assert.ok(consecutive > split);
 });
 
-test("rankHistory prioritizes score and then newest matching prompt", () => {
-	const ranked = rankHistory([
+test("resolveShortcut uses the environment override and falls back for empty values", () => {
+	assert.equal(resolveShortcut({ shortcut: "alt+r" }, "ctrl+shift+r"), "ctrl+shift+r");
+	assert.equal(resolveShortcut({ shortcut: "alt+r" }), "alt+r");
+	assert.equal(resolveShortcut({ shortcut: "" }), "ctrl+r");
+});
+
+test("rankHistory prioritizes score and then newest matching prompt", () => {	const ranked = rankHistory([
 		{ text: "inspect API errors", recency: 1 },
 		{ text: "inspect application logs", recency: 2 },
 		{ text: "deploy application", recency: 3 },

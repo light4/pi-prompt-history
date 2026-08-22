@@ -4,13 +4,41 @@ A Pi extension that restores a previous prompt with a fuzzy picker.
 
 ## Use
 
-- Press **Ctrl+R** while Pi is idle, or run `/history`.
+- Press the configured shortcut (default **Ctrl+R**) while Pi is idle, or run `/history`.
 - Type to fuzzy-filter prompts from the **active branch of the current session**.
 - Use `↑` / `↓` to select a result, then `Enter` to put it back into Pi's editor.
 - It only restores text; it does **not** submit the prompt.
 - `Esc` or `Ctrl+C` dismisses the picker.
 
 The search ranks in-order character matches and gives preference to consecutive and word-boundary matches. Repeated prompts appear once, prioritizing their most recent use.
+
+## Configure the shortcut
+
+The default picker shortcut is `Ctrl+R`. To change it globally without editing the installed package, create `~/.pi/agent/pi-prompt-history.json`:
+
+```json
+{
+  "shortcut": "alt+r"
+}
+```
+
+The `PI_PROMPT_HISTORY_SHORTCUT` environment variable takes precedence for one Pi launch:
+
+```sh
+PI_PROMPT_HISTORY_SHORTCUT=alt+r pi
+```
+
+Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the selected key conflicts with a built-in Pi shortcut, Pi reports the conflict at startup and `/history` remains available.
+
+## Install
+
+Install the latest tagged release as a global Pi package:
+
+```sh
+pi install git:github.com/light4/pi-prompt-history@v0.2.0
+```
+
+After changing the shortcut configuration, restart Pi or run `/reload`.
 
 ## Install for local development
 
