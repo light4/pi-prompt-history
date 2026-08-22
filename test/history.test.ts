@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { fuzzyScore, rankHistory } from "../src/index.ts";
+
+test("fuzzyScore accepts in-order subsequences and rejects out-of-order text", () => {
+	assert.notEqual(fuzzyScore("please inspect the auth module", "pam"), undefined);
+	assert.equal(fuzzyScore("please inspect the auth module", "map"), undefined);
+});
+
+test("fuzzyScore prefers consecutive matches", () => {
+	const consecutive = fuzzyScore("zz ng foo", "ng")!;
+	const split = fuzzyScore("zz n foo g", "ng")!;
+	assert.ok(consecutive > split);
+});
+
+test("rankHistory prioritizes score and then newest matching prompt", () => {
+	const ranked = rankHistory([
+		{ text: "inspect API errors", recency: 1 },
+		{ text: "inspect application logs", recency: 2 },
+		{ text: "deploy application", recency: 3 },
+	], "app");
+	assert.deepEqual(ranked.map((item) => item.text), [
+		"deploy application",
+		"inspect application logs",
+	]);
+});

@@ -1,0 +1,25 @@
+{
+  "name": "pi-fzf-history",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fuzzy Ctrl+R prompt history for Pi",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
