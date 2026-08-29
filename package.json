@@ -9,9 +9,16 @@
     "prompt-history"
   ],
   "license": "MIT",
-  "repository": "github:light4/pi-prompt-history",
-  "files": ["src"],
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/light4/pi-prompt-history.git"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "pi": {
     "extensions": [
       "./src/index.ts"
