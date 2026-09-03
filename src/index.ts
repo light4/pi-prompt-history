@@ -157,6 +157,12 @@ function promptText(content: unknown): string {
 		.trim();
 }
 
+/** Ignore accidental numeric-only submissions such as "1", "2", and "3". */
+export function isMeaningfulPrompt(text: string): boolean {
+	const prompt = text.trim();
+	return prompt.length > 0 && !/^\d+$/.test(prompt);
+}
+
 function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 	const seen = new Set<string>();
 	const result: HistoryItem[] = [];
@@ -166,7 +172,7 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 		const entry = branch[index];
 		if (entry.type !== "message" || entry.message.role !== "user") continue;
 		const text = promptText(entry.message.content);
-		if (!text || seen.has(text)) continue;
+		if (!isMeaningfulPrompt(text) || seen.has(text)) continue;
 		seen.add(text);
 		// Timestamps make current-session and global prompt recency directly comparable.
 		const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
@@ -191,7 +197,7 @@ function loadSessionHistory(force = false): Promise<HistoryItem[]> {
 					for (const entry of SessionManager.open(session.path).getEntries()) {
 						if (entry.type !== "message" || entry.message.role !== "user") continue;
 						const text = promptText(entry.message.content);
-						if (!text) continue;
+						if (!isMeaningfulPrompt(text)) continue;
 						const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
 						history.push({ text, recency: Number.isFinite(timestamp) ? timestamp : 0 });
 					}
@@ -224,10 +230,12 @@ function loadGlobalHistory(): LoadedGlobalHistory {
 				.filter((prompt): prompt is StoredPrompt =>
 					prompt !== null && typeof prompt === "object" &&
 					typeof (prompt as { text?: unknown }).text === "string" &&
+					isMeaningfulPrompt((prompt as { text: string }).text) &&
 					typeof (prompt as { lastUsedAt?: unknown }).lastUsedAt === "number",
 				)
 				.map(({ text, lastUsedAt, useCount }) => ({
-					text,
+					// Normalize legacy cache records written by older extension versions too.
+					text: text.trim(),
 					recency: lastUsedAt,
 					frequency: typeof useCount === "number" && Number.isInteger(useCount) && useCount > 0 ? useCount : 1,
 				})),
@@ -243,7 +251,11 @@ function loadGlobalHistory(): LoadedGlobalHistory {
 
 function saveGlobalHistory(history: HistoryItem[], limit: number, sessionHistoryCached: boolean): void {
 	// The cache uses LRU eviction. Display ranking remains frequency-first in rankHistory().
-	const mostRecent = aggregateHistory(history)
+	const mostRecent = aggregateHistory(
+		history
+			.map((item) => ({ ...item, text: item.text.trim() }))
+			.filter((item) => isMeaningfulPrompt(item.text)),
+	)
 		.sort((left, right) => right.recency - left.recency)
 		.slice(0, limit);
 	const contents: GlobalHistoryFile = {
@@ -265,7 +277,7 @@ function saveGlobalHistory(history: HistoryItem[], limit: number, sessionHistory
 
 function recordGlobalHistory(text: string, limit: number): void {
 	const prompt = text.trim();
-	if (!prompt) return;
+	if (!isMeaningfulPrompt(prompt)) return;
 	const globalHistory = loadGlobalHistory();
 	saveGlobalHistory(
 		[...globalHistory.history, { text: prompt, recency: Date.now(), frequency: 1 }],

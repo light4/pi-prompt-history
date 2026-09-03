@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aggregateHistory, fuzzyScore, mergeHistory, rankHistory, resolveShortcut } from "../src/index.ts";
+import { aggregateHistory, fuzzyScore, isMeaningfulPrompt, mergeHistory, rankHistory, resolveShortcut } from "../src/index.ts";
+
+test("isMeaningfulPrompt rejects numeric-only accidental submissions", () => {
+	assert.equal(isMeaningfulPrompt("1"), false);
+	assert.equal(isMeaningfulPrompt("  123  "), false);
+	assert.equal(isMeaningfulPrompt("123 deploys"), true);
+	assert.equal(isMeaningfulPrompt("检查 123"), true);
+});
 
 test("fuzzyScore accepts in-order subsequences and rejects out-of-order text", () => {
 	assert.notEqual(fuzzyScore("please inspect the auth module", "pam"), undefined);
