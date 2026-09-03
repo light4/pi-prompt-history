@@ -2,7 +2,12 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CONFIG_DIR_NAME, DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	CONFIG_DIR_NAME,
+	DynamicBorder,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Container, Input, Key, type KeyId, type SelectItem, SelectList, Text, matchesKey } from "@earendil-works/pi-tui";
 
 export interface HistoryItem {
@@ -180,11 +185,6 @@ function displayLabel(text: string): string {
 }
 
 async function showHistory(ctx: ExtensionContext): Promise<void> {
-	if (!ctx.isIdle()) {
-		ctx.ui.notify("Wait for Pi to finish before searching prompt history.", "warning");
-		return;
-	}
-
 	const history = mergeHistory(getPromptHistory(ctx), loadGlobalHistory());
 	if (history.length === 0) {
 		ctx.ui.notify("No prompt history yet.", "info");
