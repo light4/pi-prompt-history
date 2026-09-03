@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: typecheck
+        name: TypeScript typecheck
+        entry: npm run typecheck
+        language: system
+        pass_filenames: false
+        files: ^(src|test)/.*\.ts$
+      - id: test
+        name: TypeScript tests
+        entry: npm test
+        language: system
+        pass_filenames: false
+        files: ^(src|test)/.*\.ts$

@@ -1,20 +1,33 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { CONFIG_DIR_NAME, DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Input, Key, type KeyId, type SelectItem, SelectList, Text, matchesKey } from "@earendil-works/pi-tui";
 
-interface HistoryItem {
+export interface HistoryItem {
 	text: string;
 	recency: number;
 }
 
+interface StoredPrompt {
+	text: string;
+	lastUsedAt: number;
+}
+
+interface GlobalHistoryFile {
+	version: 1;
+	prompts: StoredPrompt[];
+}
+
 interface PromptHistoryConfig {
 	shortcut?: string;
+	globalHistoryLimit?: number;
 }
 
 const DEFAULT_SHORTCUT = Key.ctrl("r");
+const DEFAULT_GLOBAL_HISTORY_LIMIT = 1_000;
+const GLOBAL_HISTORY_FILE = "pi-prompt-history-history.json";
 
 /**
  * Resolve the picker shortcut. An environment variable takes precedence over
@@ -25,8 +38,12 @@ export function resolveShortcut(config: PromptHistoryConfig, environmentShortcut
 	return typeof shortcut === "string" && shortcut.trim() ? shortcut.trim() as KeyId : DEFAULT_SHORTCUT;
 }
 
+function agentConfigDir(): string {
+	return join(homedir(), CONFIG_DIR_NAME, "agent");
+}
+
 function loadConfig(): PromptHistoryConfig {
-	const path = join(homedir(), CONFIG_DIR_NAME, "agent", "pi-prompt-history.json");
+	const path = join(agentConfigDir(), "pi-prompt-history.json");
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		return parsed !== null && typeof parsed === "object" ? parsed as PromptHistoryConfig : {};
@@ -64,6 +81,17 @@ export function fuzzyScore(candidate: string, query: string): number | undefined
 	return score;
 }
 
+export function mergeHistory(...histories: HistoryItem[][]): HistoryItem[] {
+	const byText = new Map<string, HistoryItem>();
+	for (const history of histories) {
+		for (const item of history) {
+			const existing = byText.get(item.text);
+			if (!existing || item.recency > existing.recency) byText.set(item.text, item);
+		}
+	}
+	return [...byText.values()];
+}
+
 export function rankHistory(history: HistoryItem[], query: string): HistoryItem[] {
 	const terms = query.trim().split(/\s+/).filter(Boolean);
 	return history
@@ -98,9 +126,53 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 				.trim();
 		if (!text || seen.has(text)) continue;
 		seen.add(text);
-		result.push({ text, recency: result.length });
+		// Timestamps make current-session and global prompt recency directly comparable.
+		const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
+		result.push({ text, recency: Number.isFinite(timestamp) ? timestamp : index });
 	}
 	return result;
+}
+
+function globalHistoryPath(): string {
+	return join(agentConfigDir(), GLOBAL_HISTORY_FILE);
+}
+
+function loadGlobalHistory(): HistoryItem[] {
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(globalHistoryPath(), "utf8"));
+		if (!parsed || typeof parsed !== "object" || !("prompts" in parsed) || !Array.isArray(parsed.prompts)) return [];
+		return parsed.prompts
+			.filter((prompt): prompt is StoredPrompt =>
+				prompt !== null && typeof prompt === "object" && typeof prompt.text === "string" &&
+				typeof prompt.lastUsedAt === "number",
+			)
+			.map(({ text, lastUsedAt }) => ({ text, recency: lastUsedAt }));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			console.warn(`pi-prompt-history: unable to read ${globalHistoryPath()}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		return [];
+	}
+}
+
+function recordGlobalHistory(text: string, limit: number): void {
+	const prompt = text.trim();
+	if (!prompt) return;
+	const prompts = loadGlobalHistory()
+		.filter((item) => item.text !== prompt)
+		.map(({ text, recency }) => ({ text, lastUsedAt: recency }));
+	prompts.push({ text: prompt, lastUsedAt: Date.now() });
+	prompts.sort((left, right) => right.lastUsedAt - left.lastUsedAt);
+	const contents: GlobalHistoryFile = { version: 1, prompts: prompts.slice(0, limit) };
+	const path = globalHistoryPath();
+	try {
+		mkdirSync(agentConfigDir(), { recursive: true });
+		const temporaryPath = `${path}.${process.pid}.tmp`;
+		writeFileSync(temporaryPath, `${JSON.stringify(contents, null, "\t")}\n`, "utf8");
+		renameSync(temporaryPath, path);
+	} catch (error) {
+		console.warn(`pi-prompt-history: unable to save ${path}: ${error instanceof Error ? error.message : String(error)}`);
+	}
 }
 
 function displayLabel(text: string): string {
@@ -113,9 +185,9 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 		return;
 	}
 
-	const history = getPromptHistory(ctx);
+	const history = mergeHistory(getPromptHistory(ctx), loadGlobalHistory());
 	if (history.length === 0) {
-		ctx.ui.notify("This session has no prompt history yet.", "info");
+		ctx.ui.notify("No prompt history yet.", "info");
 		return;
 	}
 
@@ -215,7 +287,17 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 }
 
 export default function promptHistoryExtension(pi: ExtensionAPI) {
-	pi.registerShortcut(resolveShortcut(loadConfig(), process.env.PI_PROMPT_HISTORY_SHORTCUT), {
+	const config = loadConfig();
+	const configuredLimit = config.globalHistoryLimit ?? DEFAULT_GLOBAL_HISTORY_LIMIT;
+	const globalHistoryLimit = Number.isInteger(configuredLimit) && configuredLimit > 0
+		? configuredLimit
+		: DEFAULT_GLOBAL_HISTORY_LIMIT;
+
+	pi.on("input", (event) => {
+		recordGlobalHistory(event.text, globalHistoryLimit);
+	});
+
+	pi.registerShortcut(resolveShortcut(config, process.env.PI_PROMPT_HISTORY_SHORTCUT), {
 		description: "Fuzzy-search prompt history",
 		handler: showHistory,
 	});

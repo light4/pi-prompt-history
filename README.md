@@ -5,12 +5,13 @@ A Pi extension that restores a previous prompt with a fuzzy picker.
 ## Use
 
 - Press the configured shortcut (default **Ctrl+R**) while Pi is idle, or run `/history`.
-- Type to fuzzy-filter prompts from the **active branch of the current session**.
+- Type to fuzzy-filter prompts from the **active branch and your global history**. The most recently used prompt is listed first by default.
+- Prompts you submit are retained in a local global history, so frequently used requests such as `commit + push` are available in every new session.
 - Use `↑` / `↓` to select a result, then `Enter` to put it back into Pi's editor.
 - It only restores text; it does **not** submit the prompt.
 - `Esc` or `Ctrl+C` dismisses the picker.
 
-The search ranks in-order character matches and gives preference to consecutive and word-boundary matches. Repeated prompts appear once, prioritizing their most recent use.
+The search ranks in-order character matches and gives preference to consecutive and word-boundary matches. Repeated prompts appear once, prioritizing their most recent use. The global history is stored locally in `~/.pi/agent/pi-prompt-history-history.json`; it starts collecting prompts after this version is installed.
 
 ## Configure the shortcut
 
@@ -18,7 +19,8 @@ The default picker shortcut is `Ctrl+R`. To change it globally without editing t
 
 ```json
 {
-  "shortcut": "alt+r"
+  "shortcut": "alt+r",
+  "globalHistoryLimit": 1000
 }
 ```
 
@@ -35,13 +37,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 Install the latest tagged release as a global Pi package from GitHub:
 
 ```sh
-pi install git:github.com/light4/pi-prompt-history@v0.2.1
+pi install git:github.com/light4/pi-prompt-history@v0.2.2
 ```
 
 Or, after the corresponding npm release is available, install it from npm:
 
 ```sh
-pi install npm:@light4/pi-prompt-history@0.2.1
+pi install npm:@light4/pi-prompt-history@0.2.2
 ```
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
@@ -65,7 +67,7 @@ pi -e /Users/chenyuanning/sources/pi-prompt-history/src/index.ts
 
 ## Scope and privacy
 
-The extension reads prompt messages from Pi's in-memory `SessionManager`; it does not execute subprocesses, read session files itself, send data over the network, or search other sessions.
+The extension reads the active session's in-memory prompts and maintains a local, cross-session history at `~/.pi/agent/pi-prompt-history-history.json`. It does not send prompt data over the network or read Pi session files directly. Delete that history file to clear the global prompt history.
 
 ## Development
 
