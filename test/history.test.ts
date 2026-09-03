@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fuzzyScore, mergeHistory, rankHistory, resolveShortcut } from "../src/index.ts";
+import { aggregateHistory, fuzzyScore, mergeHistory, rankHistory, resolveShortcut } from "../src/index.ts";
 
 test("fuzzyScore accepts in-order subsequences and rejects out-of-order text", () => {
 	assert.notEqual(fuzzyScore("please inspect the auth module", "pam"), undefined);
@@ -55,4 +55,16 @@ test("rankHistory lists an empty-query history in reverse chronological order", 
 		"middle prompt",
 		"oldest prompt",
 	]);
+});
+
+test("global history ranks repeated prompts by frequency and then recency", () => {
+	const globalHistory = aggregateHistory(
+		[{ text: "old frequent", recency: 5 }, { text: "new infrequent", recency: 20 }],
+		[{ text: "old frequent", recency: 10 }],
+	);
+	assert.deepEqual(rankHistory(globalHistory, "").map((item) => item.text), [
+		"old frequent",
+		"new infrequent",
+	]);
+	assert.equal(globalHistory.find((item) => item.text === "old frequent")?.frequency, 2);
 });

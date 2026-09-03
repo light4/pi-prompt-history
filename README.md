@@ -4,9 +4,9 @@ A Pi extension that restores a previous prompt with a fuzzy picker.
 
 ## Use
 
-- Press the configured shortcut (default **Ctrl+R**) while Pi is idle, or run `/history`.
-- Type to fuzzy-filter prompts from the **active branch and your global history**. The most recently used prompt is listed first by default.
-- Prompts you submit are retained in a local global history, so frequently used requests such as `commit + push` are available in every new session.
+- Press the configured shortcut (default **Ctrl+R**) at any time, or run `/history`.
+- Type to fuzzy-filter prompts from the **active branch**. The most recently used prompt is listed first by default.
+- Press `Tab` to switch to **Global** history, which includes every saved Pi session and the local history retained for ephemeral sessions. Each result shows its use count and last-used time. The first global search builds a local cache; later searches reuse it. Press `Ctrl+G` to rebuild that cache from the saved sessions.
 - Use `↑` / `↓` to select a result, then `Enter` to put it back into Pi's editor.
 - It only restores text; it does **not** submit the prompt.
 - `Esc` or `Ctrl+C` dismisses the picker.
@@ -67,7 +67,7 @@ pi -e /Users/chenyuanning/sources/pi-prompt-history/src/index.ts
 
 ## Scope and privacy
 
-The extension reads the active session's in-memory prompts and maintains a local, cross-session history at `~/.pi/agent/pi-prompt-history-history.json`. It does not send prompt data over the network or read Pi session files directly. Delete that history file to clear the global prompt history.
+The extension reads the active session, all locally saved Pi session files, and maintains a local global-history cache at `~/.pi/agent/pi-prompt-history-history.json` (including prompts from ephemeral sessions). It does not send prompt data over the network. Press `Ctrl+G` in the picker, or delete that file, to rebuild the cache from saved sessions.
 
 ## Development
 

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	CONFIG_DIR_NAME,
 	DynamicBorder,
+	SessionManager,
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
@@ -13,16 +14,25 @@ import { Container, Input, Key, type KeyId, type SelectItem, SelectList, Text, m
 export interface HistoryItem {
 	text: string;
 	recency: number;
+	frequency?: number;
 }
 
 interface StoredPrompt {
 	text: string;
 	lastUsedAt: number;
+	useCount?: number;
 }
 
 interface GlobalHistoryFile {
-	version: 1;
+	version: 1 | 2;
 	prompts: StoredPrompt[];
+	/** True once prompts from persisted Pi sessions have been merged into this file. */
+	sessionHistoryCached?: boolean;
+}
+
+interface LoadedGlobalHistory {
+	history: HistoryItem[];
+	sessionHistoryCached: boolean;
 }
 
 interface PromptHistoryConfig {
@@ -97,6 +107,23 @@ export function mergeHistory(...histories: HistoryItem[][]): HistoryItem[] {
 	return [...byText.values()];
 }
 
+/** Combine duplicate prompts, accumulating use frequency while retaining the newest timestamp. */
+export function aggregateHistory(...histories: HistoryItem[][]): HistoryItem[] {
+	const byText = new Map<string, HistoryItem>();
+	for (const history of histories) {
+		for (const item of history) {
+			const existing = byText.get(item.text);
+			if (!existing) {
+				byText.set(item.text, { ...item, frequency: item.frequency ?? 1 });
+				continue;
+			}
+			existing.frequency = (existing.frequency ?? 1) + (item.frequency ?? 1);
+			if (item.recency > existing.recency) existing.recency = item.recency;
+		}
+	}
+	return [...byText.values()];
+}
+
 export function rankHistory(history: HistoryItem[], query: string): HistoryItem[] {
 	const terms = query.trim().split(/\s+/).filter(Boolean);
 	return history
@@ -109,8 +136,25 @@ export function rankHistory(history: HistoryItem[], query: string): HistoryItem[
 			return { item, score };
 		})
 		.filter((match): match is { item: HistoryItem; score: number } => match.score !== undefined)
-		.sort((left, right) => right.score - left.score || right.item.recency - left.item.recency)
+		.sort((left, right) =>
+			right.score - left.score ||
+			(right.item.frequency ?? 0) - (left.item.frequency ?? 0) ||
+			right.item.recency - left.item.recency,
+		)
 		.map((match) => match.item);
+}
+
+function promptText(content: unknown): string {
+	if (typeof content === "string") return content.trim();
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((block): block is { type: "text"; text: string } =>
+			block !== null && typeof block === "object" &&
+			(block as { type?: unknown }).type === "text" && typeof (block as { text?: unknown }).text === "string",
+		)
+		.map((block) => block.text)
+		.join("\n")
+		.trim();
 }
 
 function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
@@ -121,14 +165,7 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 	for (let index = branch.length - 1; index >= 0; index--) {
 		const entry = branch[index];
 		if (entry.type !== "message" || entry.message.role !== "user") continue;
-		const content = entry.message.content;
-		const text = typeof content === "string"
-			? content.trim()
-			: content
-				.filter((block): block is { type: "text"; text: string } => block.type === "text")
-				.map((block) => block.text)
-				.join("\n")
-				.trim();
+		const text = promptText(entry.message.content);
 		if (!text || seen.has(text)) continue;
 		seen.add(text);
 		// Timestamps make current-session and global prompt recency directly comparable.
@@ -138,37 +175,83 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 	return result;
 }
 
+let sessionHistoryPromise: Promise<HistoryItem[]> | undefined;
+
+/** Load prompts from every persisted Pi session once per Pi process. */
+function loadSessionHistory(force = false): Promise<HistoryItem[]> {
+	if (force) sessionHistoryPromise = undefined;
+	if (sessionHistoryPromise) return sessionHistoryPromise;
+
+	sessionHistoryPromise = (async () => {
+		try {
+			const sessions = await SessionManager.listAll();
+			const history: HistoryItem[] = [];
+			for (const session of sessions) {
+				try {
+					for (const entry of SessionManager.open(session.path).getEntries()) {
+						if (entry.type !== "message" || entry.message.role !== "user") continue;
+						const text = promptText(entry.message.content);
+						if (!text) continue;
+						const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
+						history.push({ text, recency: Number.isFinite(timestamp) ? timestamp : 0 });
+					}
+				} catch (error) {
+					console.warn(`pi-prompt-history: unable to read session ${session.path}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			return history;
+		} catch (error) {
+			console.warn(`pi-prompt-history: unable to list saved sessions: ${error instanceof Error ? error.message : String(error)}`);
+			return [];
+		}
+	})();
+	return sessionHistoryPromise;
+}
+
 function globalHistoryPath(): string {
 	return join(agentConfigDir(), GLOBAL_HISTORY_FILE);
 }
 
-function loadGlobalHistory(): HistoryItem[] {
+function loadGlobalHistory(): LoadedGlobalHistory {
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(globalHistoryPath(), "utf8"));
-		if (!parsed || typeof parsed !== "object" || !("prompts" in parsed) || !Array.isArray(parsed.prompts)) return [];
-		return parsed.prompts
-			.filter((prompt): prompt is StoredPrompt =>
-				prompt !== null && typeof prompt === "object" && typeof prompt.text === "string" &&
-				typeof prompt.lastUsedAt === "number",
-			)
-			.map(({ text, lastUsedAt }) => ({ text, recency: lastUsedAt }));
+		if (!parsed || typeof parsed !== "object" || !("prompts" in parsed) || !Array.isArray(parsed.prompts)) {
+			return { history: [], sessionHistoryCached: false };
+		}
+		const file = parsed as { prompts: unknown[]; sessionHistoryCached?: unknown };
+		return {
+			history: file.prompts
+				.filter((prompt): prompt is StoredPrompt =>
+					prompt !== null && typeof prompt === "object" &&
+					typeof (prompt as { text?: unknown }).text === "string" &&
+					typeof (prompt as { lastUsedAt?: unknown }).lastUsedAt === "number",
+				)
+				.map(({ text, lastUsedAt, useCount }) => ({
+					text,
+					recency: lastUsedAt,
+					frequency: typeof useCount === "number" && Number.isInteger(useCount) && useCount > 0 ? useCount : 1,
+				})),
+			sessionHistoryCached: file.sessionHistoryCached === true,
+		};
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			console.warn(`pi-prompt-history: unable to read ${globalHistoryPath()}: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		return [];
+		return { history: [], sessionHistoryCached: false };
 	}
 }
 
-function recordGlobalHistory(text: string, limit: number): void {
-	const prompt = text.trim();
-	if (!prompt) return;
-	const prompts = loadGlobalHistory()
-		.filter((item) => item.text !== prompt)
-		.map(({ text, recency }) => ({ text, lastUsedAt: recency }));
-	prompts.push({ text: prompt, lastUsedAt: Date.now() });
-	prompts.sort((left, right) => right.lastUsedAt - left.lastUsedAt);
-	const contents: GlobalHistoryFile = { version: 1, prompts: prompts.slice(0, limit) };
+function saveGlobalHistory(history: HistoryItem[], limit: number, sessionHistoryCached: boolean): void {
+	// The cache uses LRU eviction. Display ranking remains frequency-first in rankHistory().
+	const mostRecent = aggregateHistory(history)
+		.sort((left, right) => right.recency - left.recency)
+		.slice(0, limit);
+	const contents: GlobalHistoryFile = {
+		version: 2,
+		prompts: mostRecent
+			.map(({ text, recency, frequency }) => ({ text, lastUsedAt: recency, useCount: frequency })),
+		sessionHistoryCached,
+	};
 	const path = globalHistoryPath();
 	try {
 		mkdirSync(agentConfigDir(), { recursive: true });
@@ -180,23 +263,61 @@ function recordGlobalHistory(text: string, limit: number): void {
 	}
 }
 
+function recordGlobalHistory(text: string, limit: number): void {
+	const prompt = text.trim();
+	if (!prompt) return;
+	const globalHistory = loadGlobalHistory();
+	saveGlobalHistory(
+		[...globalHistory.history, { text: prompt, recency: Date.now(), frequency: 1 }],
+		limit,
+		globalHistory.sessionHistoryCached,
+	);
+}
+
+/** Mark a restored global prompt as recently used without changing its session frequency. */
+function touchGlobalHistory(text: string, limit: number): void {
+	const globalHistory = loadGlobalHistory();
+	const existing = globalHistory.history.find((item) => item.text === text);
+	saveGlobalHistory(
+		[
+			...globalHistory.history.filter((item) => item.text !== text),
+			{ text, recency: Date.now(), frequency: existing?.frequency ?? 1 },
+		],
+		limit,
+		globalHistory.sessionHistoryCached,
+	);
+}
+
 function displayLabel(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
 
-async function showHistory(ctx: ExtensionContext): Promise<void> {
-	const history = mergeHistory(getPromptHistory(ctx), loadGlobalHistory());
-	if (history.length === 0) {
-		ctx.ui.notify("No prompt history yet.", "info");
-		return;
+function displayDescription(item: HistoryItem, includeFrequency: boolean): string | undefined {
+	const details: string[] = [];
+	if (includeFrequency) {
+		const frequency = item.frequency ?? 1;
+		details.push(`used ${frequency} time${frequency === 1 ? "" : "s"}`);
 	}
+	if (Number.isFinite(item.recency) && item.recency > 0) {
+		details.push(`last used ${new Date(item.recency).toLocaleString()}`);
+	}
+	if (item.text.includes("\n")) details.push("multiline prompt");
+	return details.length > 0 ? details.join(" • ") : undefined;
+}
 
+async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): Promise<void> {
+	const sessionHistory = getPromptHistory(ctx);
 	let requestRender: (() => void) | undefined;
+	let selectedFromGlobal = false;
 	const selected = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
 		requestRender = () => tui.requestRender();
 		const container = new Container();
 		const input = new Input();
 		let selectList: SelectList;
+		let scope: "session" | "global" = "session";
+		let loadingGlobal = false;
+		let globalHistory: HistoryItem[] | undefined;
+		let history = sessionHistory;
 		let matches = history;
 		let selectedIndex = 0;
 
@@ -204,7 +325,7 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 			const items: SelectItem[] = matches.slice(0, 200).map((item) => ({
 				value: item.text,
 				label: displayLabel(item.text),
-				description: item.text.includes("\n") ? "multiline prompt" : undefined,
+				description: displayDescription(item, scope === "global"),
 			}));
 			selectList = new SelectList(items, 10, {
 				selectedPrefix: (text) => theme.fg("accent", text),
@@ -227,6 +348,51 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 			selectedIndex = (selectedIndex + delta + matches.length) % matches.length;
 			selectList.setSelectedIndex(selectedIndex);
 		};
+
+		const rebuildGlobalHistory = () => {
+			if (loadingGlobal) return;
+			const cachedGlobalHistory = loadGlobalHistory();
+			loadingGlobal = true;
+			scope = "global";
+			void loadSessionHistory(true).then((savedSessionHistory) => {
+				const savedHistory = aggregateHistory(savedSessionHistory);
+				const savedTexts = new Set(savedHistory.map((item) => item.text));
+				const ephemeralHistory = cachedGlobalHistory.history.filter((item) => !savedTexts.has(item.text));
+				globalHistory = aggregateHistory(savedHistory, ephemeralHistory);
+				saveGlobalHistory(globalHistory, globalHistoryLimit, true);
+				history = globalHistory;
+				loadingGlobal = false;
+				refresh();
+				tui.requestRender();
+			});
+		};
+
+		const switchScope = () => {
+			if (scope === "global") {
+				scope = "session";
+				history = sessionHistory;
+				refresh();
+				return;
+			}
+			if (globalHistory) {
+				scope = "global";
+				history = globalHistory;
+				refresh();
+				return;
+			}
+			if (loadingGlobal) return;
+
+			const cachedGlobalHistory = loadGlobalHistory();
+			if (cachedGlobalHistory.sessionHistoryCached) {
+				scope = "global";
+				globalHistory = cachedGlobalHistory.history;
+				history = globalHistory;
+				refresh();
+				return;
+			}
+
+			rebuildGlobalHistory();
+		};
 		createList();
 
 		return {
@@ -239,11 +405,13 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 			render(width: number) {
 				container.clear();
 				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-				container.addChild(new Text(theme.fg("accent", theme.bold("Prompt history")), 1, 0));
+				const scopeLabel = scope === "session" ? "This session" : "Global";
+				const loadingLabel = loadingGlobal ? " (loading…)" : "";
+				container.addChild(new Text(theme.fg("accent", theme.bold(`Prompt history — ${scopeLabel}${loadingLabel}`)), 1, 0));
 				container.addChild(new Text(theme.fg("dim", "fuzzy filter: "), 1, 0));
 				container.addChild(input);
 				container.addChild(selectList);
-				container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter restore • esc cancel"), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "↑↓ navigate • tab scope • ctrl+g rebuild global • enter restore • esc cancel"), 1, 0));
 				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 				return container.render(width);
 			},
@@ -256,7 +424,11 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 				// Handle picker controls here instead of delegating to SelectList. Its
 				// handler reads the application's keybinding manager, which may not
 				// match the raw key events delivered to a custom overlay.
-				if (matchesKey(data, Key.up)) {
+				if (matchesKey(data, Key.ctrl("g"))) {
+					rebuildGlobalHistory();
+				} else if (matchesKey(data, Key.tab)) {
+					switchScope();
+				} else if (matchesKey(data, Key.up)) {
 					moveSelection(-1);
 				} else if (matchesKey(data, Key.down)) {
 					moveSelection(1);
@@ -266,7 +438,10 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 					moveSelection(10);
 				} else if (matchesKey(data, Key.enter)) {
 					const item = selectList.getSelectedItem();
-					if (item) done(item.value);
+					if (item) {
+						selectedFromGlobal = scope === "global";
+						done(item.value);
+					}
 				} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 					done(null);
 				} else {
@@ -279,6 +454,7 @@ async function showHistory(ctx: ExtensionContext): Promise<void> {
 	}, { overlay: true, overlayOptions: { width: "80%", minWidth: 40, maxHeight: "70%" } });
 
 	if (selected !== null) {
+		if (selectedFromGlobal) touchGlobalHistory(selected, globalHistoryLimit);
 		ctx.ui.setEditorText(selected);
 		// setEditorText updates the editor state but does not schedule a repaint.
 		// The picker close already rendered, so explicitly repaint the restored text.
@@ -299,10 +475,10 @@ export default function promptHistoryExtension(pi: ExtensionAPI) {
 
 	pi.registerShortcut(resolveShortcut(config, process.env.PI_PROMPT_HISTORY_SHORTCUT), {
 		description: "Fuzzy-search prompt history",
-		handler: showHistory,
+		handler: (ctx) => showHistory(ctx, globalHistoryLimit),
 	});
 	pi.registerCommand("history", {
 		description: "Fuzzy-search prompts in the current session",
-		handler: async (_args, ctx) => showHistory(ctx),
+		handler: async (_args, ctx) => showHistory(ctx, globalHistoryLimit),
 	});
 }
