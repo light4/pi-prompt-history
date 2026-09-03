@@ -37,13 +37,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 Install the latest tagged release as a global Pi package from GitHub:
 
 ```sh
-pi install git:github.com/light4/pi-prompt-history@v0.2.4
+pi install git:github.com/light4/pi-prompt-history@v0.2.5
 ```
 
 Or, after the corresponding npm release is available, install it from npm:
 
 ```sh
-pi install npm:@light4/pi-prompt-history@0.2.4
+pi install npm:@light4/pi-prompt-history@0.2.5
 ```
 
 After changing the shortcut configuration, restart Pi or run `/reload`.

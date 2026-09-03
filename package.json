@@ -1,6 +1,6 @@
 {
   "name": "@light4/pi-prompt-history",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Fuzzy prompt history for Pi",
   "type": "module",
   "keywords": [
