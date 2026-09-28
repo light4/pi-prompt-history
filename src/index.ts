@@ -183,35 +183,35 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 
 let sessionHistoryPromise: Promise<HistoryItem[]> | undefined;
 
+/** Read saved prompts for one workspace, or all workspaces when cwd is omitted. */
+export async function readSessionHistory(cwd?: string, sessionDir?: string): Promise<HistoryItem[]> {
+	try {
+		const sessions = cwd === undefined ? await SessionManager.listAll() : await SessionManager.list(cwd, sessionDir);
+		const history: HistoryItem[] = [];
+		for (const session of sessions) {
+			try {
+				for (const entry of SessionManager.open(session.path).getEntries()) {
+					if (entry.type !== "message" || entry.message.role !== "user") continue;
+					const text = promptText(entry.message.content);
+					if (!isMeaningfulPrompt(text)) continue;
+					const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
+					history.push({ text, recency: Number.isFinite(timestamp) ? timestamp : 0 });
+				}
+			} catch (error) {
+				console.warn(`pi-prompt-history: unable to read session ${session.path}: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+		return history;
+	} catch (error) {
+		console.warn(`pi-prompt-history: unable to list saved sessions: ${error instanceof Error ? error.message : String(error)}`);
+		return [];
+	}
+}
+
 /** Load prompts from every persisted Pi session once per Pi process. */
 function loadSessionHistory(force = false): Promise<HistoryItem[]> {
 	if (force) sessionHistoryPromise = undefined;
-	if (sessionHistoryPromise) return sessionHistoryPromise;
-
-	sessionHistoryPromise = (async () => {
-		try {
-			const sessions = await SessionManager.listAll();
-			const history: HistoryItem[] = [];
-			for (const session of sessions) {
-				try {
-					for (const entry of SessionManager.open(session.path).getEntries()) {
-						if (entry.type !== "message" || entry.message.role !== "user") continue;
-						const text = promptText(entry.message.content);
-						if (!isMeaningfulPrompt(text)) continue;
-						const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
-						history.push({ text, recency: Number.isFinite(timestamp) ? timestamp : 0 });
-					}
-				} catch (error) {
-					console.warn(`pi-prompt-history: unable to read session ${session.path}: ${error instanceof Error ? error.message : String(error)}`);
-				}
-			}
-			return history;
-		} catch (error) {
-			console.warn(`pi-prompt-history: unable to list saved sessions: ${error instanceof Error ? error.message : String(error)}`);
-			return [];
-		}
-	})();
-	return sessionHistoryPromise;
+	return sessionHistoryPromise ??= readSessionHistory();
 }
 
 function globalHistoryPath(): string {
@@ -326,8 +326,10 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 		const container = new Container();
 		const input = new Input();
 		let selectList: SelectList;
-		let scope: "session" | "global" = "session";
+		let scope: "session" | "workspace" | "global" = "session";
+		let loadingWorkspace = false;
 		let loadingGlobal = false;
+		let workspaceHistory: HistoryItem[] | undefined;
 		let globalHistory: HistoryItem[] | undefined;
 		let history = sessionHistory;
 		let matches = history;
@@ -337,7 +339,7 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 			const items: SelectItem[] = matches.slice(0, 200).map((item) => ({
 				value: item.text,
 				label: displayLabel(item.text),
-				description: displayDescription(item, scope === "global"),
+				description: displayDescription(item, scope !== "session"),
 			}));
 			selectList = new SelectList(items, 10, {
 				selectedPrefix: (text) => theme.fg("accent", text),
@@ -366,44 +368,52 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 			const cachedGlobalHistory = loadGlobalHistory();
 			loadingGlobal = true;
 			scope = "global";
+			history = [];
+			refresh();
 			void loadSessionHistory(true).then((savedSessionHistory) => {
 				const savedHistory = aggregateHistory(savedSessionHistory);
 				const savedTexts = new Set(savedHistory.map((item) => item.text));
 				const ephemeralHistory = cachedGlobalHistory.history.filter((item) => !savedTexts.has(item.text));
 				globalHistory = aggregateHistory(savedHistory, ephemeralHistory);
 				saveGlobalHistory(globalHistory, globalHistoryLimit, true);
-				history = globalHistory;
 				loadingGlobal = false;
-				refresh();
-				tui.requestRender();
+				if (scope === "global") {
+					history = globalHistory;
+					refresh();
+					tui.requestRender();
+				}
 			});
 		};
 
 		const switchScope = () => {
-			if (scope === "global") {
-				scope = "session";
+			scope = scope === "session" ? "workspace" : scope === "workspace" ? "global" : "session";
+			if (scope === "session") {
 				history = sessionHistory;
-				refresh();
-				return;
+			} else if (scope === "workspace") {
+				history = workspaceHistory ?? [];
+				if (!workspaceHistory && !loadingWorkspace) {
+					loadingWorkspace = true;
+					void readSessionHistory(ctx.cwd, ctx.sessionManager.getSessionDir()).then((savedHistory) => {
+						const saved = aggregateHistory(savedHistory);
+						const savedTexts = new Set(saved.map((item) => item.text));
+						workspaceHistory = mergeHistory(saved, sessionHistory.filter((item) => !savedTexts.has(item.text)));
+						loadingWorkspace = false;
+						if (scope === "workspace") {
+							history = workspaceHistory;
+							refresh();
+							tui.requestRender();
+						}
+					});
+				}
+			} else {
+				if (!globalHistory && !loadingGlobal) {
+					const cachedGlobalHistory = loadGlobalHistory();
+					if (cachedGlobalHistory.sessionHistoryCached) globalHistory = cachedGlobalHistory.history;
+					else rebuildGlobalHistory();
+				}
+				history = globalHistory ?? [];
 			}
-			if (globalHistory) {
-				scope = "global";
-				history = globalHistory;
-				refresh();
-				return;
-			}
-			if (loadingGlobal) return;
-
-			const cachedGlobalHistory = loadGlobalHistory();
-			if (cachedGlobalHistory.sessionHistoryCached) {
-				scope = "global";
-				globalHistory = cachedGlobalHistory.history;
-				history = globalHistory;
-				refresh();
-				return;
-			}
-
-			rebuildGlobalHistory();
+			refresh();
 		};
 		createList();
 
@@ -417,13 +427,13 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 			render(width: number) {
 				container.clear();
 				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-				const scopeLabel = scope === "session" ? "This session" : "Global";
-				const loadingLabel = loadingGlobal ? " (loading…)" : "";
+				const scopeLabel = scope === "session" ? "This session" : scope === "workspace" ? "This workspace" : "Global";
+				const loadingLabel = (scope === "workspace" && loadingWorkspace) || (scope === "global" && loadingGlobal) ? " (loading…)" : "";
 				container.addChild(new Text(theme.fg("accent", theme.bold(`Prompt history — ${scopeLabel}${loadingLabel}`)), 1, 0));
 				container.addChild(new Text(theme.fg("dim", "fuzzy filter: "), 1, 0));
 				container.addChild(input);
 				container.addChild(selectList);
-				container.addChild(new Text(theme.fg("dim", "↑↓ navigate • tab scope • ctrl+g rebuild global • enter restore • esc cancel"), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "↑↓ navigate • tab scope (session → workspace → global) • ctrl+g rebuild global • enter restore • esc cancel"), 1, 0));
 				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 				return container.render(width);
 			},

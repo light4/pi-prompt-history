@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { aggregateHistory, fuzzyScore, isMeaningfulPrompt, mergeHistory, rankHistory, resolveShortcut } from "../src/index.ts";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { aggregateHistory, fuzzyScore, isMeaningfulPrompt, mergeHistory, rankHistory, readSessionHistory, resolveShortcut } from "../src/index.ts";
 
 test("isMeaningfulPrompt rejects numeric-only accidental submissions", () => {
 	assert.equal(isMeaningfulPrompt("1"), false);
@@ -62,6 +66,27 @@ test("rankHistory lists an empty-query history in reverse chronological order", 
 		"middle prompt",
 		"oldest prompt",
 	]);
+});
+
+test("workspace history includes saved sessions for this cwd, not other workspaces", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-prompt-history-"));
+	try {
+		for (const [cwd, prompt] of [[join(dir, "one"), "first workspace"], [join(dir, "one"), "second session"], [join(dir, "two"), "other workspace"]]) {
+			const session = SessionManager.create(cwd, dir);
+			session.appendMessage({ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() });
+			// Pi persists a session only after its first assistant response.
+			session.appendMessage({
+				role: "assistant", content: [], api: "openai-completions", provider: "openai", model: "test",
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				stopReason: "stop", timestamp: Date.now(),
+			});
+		}
+		const history = await readSessionHistory(join(dir, "one"), dir);
+		assert.deepEqual(new Set(history.map((item) => item.text)), new Set(["first workspace", "second session"]));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("global history ranks repeated prompts by frequency and then recency", () => {

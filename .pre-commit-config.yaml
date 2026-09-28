@@ -6,10 +6,10 @@ repos:
         entry: npm run typecheck
         language: system
         pass_filenames: false
-        files: ^(src|test)/.*\.ts$
+        files: ^((src|test)/.*\.ts|package(-lock)?\.json|tsconfig\.json)$
       - id: test
         name: TypeScript tests
         entry: npm test
         language: system
         pass_filenames: false
-        files: ^(src|test)/.*\.ts$
+        files: ^((src|test)/.*\.ts|package(-lock)?\.json|tsconfig\.json)$

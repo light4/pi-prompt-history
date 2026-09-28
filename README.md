@@ -5,8 +5,8 @@ A Pi extension that restores a previous prompt with a fuzzy picker.
 ## Use
 
 - Press the configured shortcut (default **Ctrl+R**) at any time, or run `/history`.
-- Type to fuzzy-filter prompts from the **active branch**. The most recently used prompt is listed first by default.
-- Press `Tab` to switch to **Global** history, which includes every saved Pi session and the local history retained for ephemeral sessions. Each result shows its use count and last-used time. The first global search builds a local cache; later searches reuse it. Press `Ctrl+G` to rebuild that cache from the saved sessions.
+- Type to fuzzy-filter prompts from the **current session's active branch**. The most recently used prompt is listed first by default.
+- Press `Tab` to cycle through **This session → This workspace → Global**. Workspace history includes saved sessions from the current working directory (plus the current session); global history includes every saved Pi session and the local history retained for ephemeral sessions. Workspace and global results show use count and last-used time. The first global search builds a local cache; later searches reuse it. Press `Ctrl+G` to rebuild that cache from the saved sessions.
 - Use `↑` / `↓` to select a result, then `Enter` to put it back into Pi's editor.
 - It only restores text; it does **not** submit the prompt.
 - `Esc` or `Ctrl+C` dismisses the picker.
@@ -34,17 +34,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 
 ## Install
 
-Install the latest tagged release as a global Pi package from GitHub:
+Install the v0.3.0 release from GitHub:
 
 ```sh
-pi install git:github.com/light4/pi-prompt-history@v0.2.6
+pi install git:github.com/light4/pi-prompt-history@v0.3.0
 ```
 
-Or, after the corresponding npm release is available, install it from npm:
-
-```sh
-pi install npm:@light4/pi-prompt-history@0.2.6
-```
+The npm release currently lags behind GitHub. Once `0.3.0` is published to npm, you can instead use `pi install npm:@light4/pi-prompt-history@0.3.0`.
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
 
@@ -67,7 +63,7 @@ pi -e /Users/chenyuanning/sources/pi-prompt-history/src/index.ts
 
 ## Scope and privacy
 
-The extension reads the active session, all locally saved Pi session files, and maintains a local global-history cache at `~/.pi/agent/pi-prompt-history-history.json` (including prompts from ephemeral sessions). It does not send prompt data over the network. Press `Ctrl+G` in the picker, or delete that file, to rebuild the cache from saved sessions.
+The extension reads the active session, saved sessions for the current workspace or all workspaces, and maintains a local global-history cache at `~/.pi/agent/pi-prompt-history-history.json` (including prompts from ephemeral sessions). It does not send prompt data over the network. Press `Ctrl+G` in the picker, or delete that file, to rebuild the cache from saved sessions.
 
 ## Development
 

@@ -1,6 +1,6 @@
 {
   "name": "@light4/pi-prompt-history",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "description": "Fuzzy prompt history for Pi",
   "type": "module",
   "keywords": [
@@ -29,7 +29,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -38,7 +38,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.87.1",
     "@earendil-works/pi-tui": "^0.87.1",
-    "tsx": "^4.23.13",
-    "typescript": "^5.9.3"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
