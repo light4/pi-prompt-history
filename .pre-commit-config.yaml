@@ -3,13 +3,13 @@ repos:
     hooks:
       - id: typecheck
         name: TypeScript typecheck
-        entry: npm run typecheck
+        entry: pnpm run typecheck
         language: system
         pass_filenames: false
-        files: ^((src|test)/.*\.ts|package(-lock)?\.json|tsconfig\.json)$
+        files: ^((src|test)/.*\.ts|package\.json|pnpm(-lock)?\.yaml|tsconfig\.json)$
       - id: test
         name: TypeScript tests
-        entry: npm test
+        entry: pnpm test
         language: system
         pass_filenames: false
-        files: ^((src|test)/.*\.ts|package(-lock)?\.json|tsconfig\.json)$
+        files: ^((src|test)/.*\.ts|package\.json|pnpm(-lock)?\.yaml|tsconfig\.json)$

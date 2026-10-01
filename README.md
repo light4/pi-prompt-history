@@ -34,13 +34,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 
 ## Install
 
-Install the v0.3.0 release from GitHub:
+Install the v0.3.1 release from npm:
 
 ```sh
-pi install git:github.com/light4/pi-prompt-history@v0.3.0
+pi install npm:@light4/pi-prompt-history@0.3.1
 ```
 
-The npm release currently lags behind GitHub. Once `0.3.0` is published to npm, you can instead use `pi install npm:@light4/pi-prompt-history@0.3.0`.
+Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.1`.
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
 
@@ -67,4 +67,4 @@ The extension reads the active session, saved sessions for the current workspace
 
 ## Development
 
-The extension is TypeScript interpreted by Pi's extension loader and deliberately has no npm runtime dependencies. Test it manually by sending a few prompts, then invoking `Ctrl+R` or `/history`.
+Run `pnpm install`, `pnpm run typecheck`, and `pnpm test`. The extension is TypeScript interpreted by Pi's extension loader and deliberately has no npm runtime dependencies. Test it manually by sending a few prompts, then invoking `Ctrl+R` or `/history`.
