@@ -34,13 +34,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 
 ## Install
 
-Install the v0.3.2 release from npm:
+Install the v0.3.3 release from npm:
 
 ```sh
-pi install npm:@light4/pi-prompt-history@0.3.2
+pi install npm:@light4/pi-prompt-history@0.3.3
 ```
 
-Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.2`.
+Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.3`.
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
 
@@ -68,3 +68,15 @@ The extension reads the active session, saved sessions for the current workspace
 ## Development
 
 Run `pnpm install`, `pnpm run typecheck`, and `pnpm test`. The extension is TypeScript interpreted by Pi's extension loader and deliberately has no npm runtime dependencies. Test it manually by sending a few prompts, then invoking `Ctrl+R` or `/history`.
+
+## Release
+
+Bump `package.json` and the install examples above, commit, and push a matching `vX.Y.Z` tag. Publish a GitHub Release for that tag; [publish.yml](.github/workflows/publish.yml) verifies the version, runs checks, and publishes to npm with provenance via OIDC. No npm token is stored in GitHub.
+
+One-time setup by the npm package owner (requires npm 11.19+ and 2FA):
+
+```sh
+npm trust github @light4/pi-prompt-history --repo light4/pi-prompt-history --file publish.yml --allow-publish --yes
+```
+
+If publishing fails, fix the cause and rerun the failed GitHub Actions job. Confirm both the GitHub Release and npm version before updating consumers.

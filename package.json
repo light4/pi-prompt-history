@@ -1,6 +1,6 @@
 {
   "name": "@light4/pi-prompt-history",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "packageManager": "pnpm@12.8.1",
   "description": "Fuzzy prompt history for Pi",
   "type": "module",
