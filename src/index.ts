@@ -321,6 +321,7 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 	const sessionHistory = getPromptHistory(ctx);
 	let requestRender: (() => void) | undefined;
 	let selectedFromGlobal = false;
+	// Use Pi's inline editor area: terminal images can paint over text overlays.
 	const selected = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
 		requestRender = () => tui.requestRender();
 		const container = new Container();
@@ -445,7 +446,7 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 			handleInput(data: string) {
 				// Handle picker controls here instead of delegating to SelectList. Its
 				// handler reads the application's keybinding manager, which may not
-				// match the raw key events delivered to a custom overlay.
+				// match the raw key events delivered to a custom component.
 				if (matchesKey(data, Key.ctrl("g"))) {
 					rebuildGlobalHistory();
 				} else if (matchesKey(data, Key.tab)) {
@@ -473,7 +474,7 @@ async function showHistory(ctx: ExtensionContext, globalHistoryLimit: number): P
 				tui.requestRender();
 			},
 		};
-	}, { overlay: true, overlayOptions: { width: "80%", minWidth: 40, maxHeight: "70%" } });
+	});
 
 	if (selected !== null) {
 		if (selectedFromGlobal) touchGlobalHistory(selected, globalHistoryLimit);

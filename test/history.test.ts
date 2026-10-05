@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { aggregateHistory, fuzzyScore, isMeaningfulPrompt, mergeHistory, rankHistory, readSessionHistory, resolveShortcut } from "../src/index.ts";
+import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, CURSOR_MARKER, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import promptHistoryExtension, { aggregateHistory, fuzzyScore, isMeaningfulPrompt, mergeHistory, rankHistory, readSessionHistory, resolveShortcut } from "../src/index.ts";
 
 test("isMeaningfulPrompt rejects numeric-only accidental submissions", () => {
 	assert.equal(isMeaningfulPrompt("1"), false);
@@ -99,4 +100,64 @@ test("global history ranks repeated prompts by frequency and then recency", () =
 		"new infrequent",
 	]);
 	assert.equal(globalHistory.find((item) => item.text === "old frequent")?.frequency, 2);
+});
+
+test("history picker uses inline layout so transcript images cannot cover it", async () => {
+	const handlers: Array<(ctx: ExtensionCommandContext) => Promise<void>> = [];
+	const pi: Pick<ExtensionAPI, "on" | "registerShortcut" | "registerCommand"> = {
+		on() { return () => {}; },
+		registerShortcut(_key, options) {
+			handlers.push(async (ctx) => { await options.handler(ctx); });
+		},
+		registerCommand(_name, options) {
+			handlers.push(async (ctx) => { await options.handler("", ctx); });
+		},
+	};
+	promptHistoryExtension(pi as ExtensionAPI);
+	assert.equal(handlers.length, 2);
+
+	const sessionManager = SessionManager.inMemory();
+	sessionManager.appendMessage({ role: "user", content: "inspect screenshot", timestamp: 1 });
+	const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+	type CustomFactory = Parameters<ExtensionContext["ui"]["custom"]>[0];
+	for (const handler of handlers) {
+		for (const key of ["\r", "\x1b"]) {
+			let editorText = "unfinished draft";
+			let renders = 0;
+			const ctx = {
+				sessionManager,
+				ui: {
+					async custom(factory: CustomFactory, options?: Parameters<ExtensionContext["ui"]["custom"]>[1]) {
+						assert.notEqual(options?.overlay, true);
+						let result: unknown;
+						const component = await factory(
+							{ requestRender: () => { renders++; } } as TUI,
+							theme, {} as Parameters<CustomFactory>[2], (value) => { result = value; },
+						);
+						if ("focused" in component) component.focused = true;
+						// An image occupies eight transcript rows, independently of the picker.
+						const imageLines = ["\x1b_Ga=T,r=8;image\x1b\\", ...Array<string>(7).fill("")];
+						const layout = new Container();
+						layout.addChild({ render: () => imageLines, invalidate() {} });
+						layout.addChild(component);
+						for (const width of [40, 120]) {
+							const lines = layout.render(width);
+							assert.deepEqual(lines.slice(0, 8), imageLines);
+							assert.match(lines[9], /Prompt history/);
+							assert.ok(lines.slice(8).some((line) => line.includes(CURSOR_MARKER)));
+							assert.ok(lines.slice(8).some((line) => line.includes("esc cancel")));
+							assert.ok(lines.slice(8).every((line) => visibleWidth(line) <= width));
+						}
+						component.handleInput?.(key);
+						assert.equal(result, key === "\r" ? "inspect screenshot" : null);
+						return result;
+					},
+					setEditorText(text: string) { editorText = text; },
+				},
+			} as unknown as ExtensionCommandContext;
+			await handler(ctx);
+			assert.equal(editorText, key === "\r" ? "inspect screenshot" : "unfinished draft");
+			assert.ok(renders > 0);
+		}
+	}
 });
