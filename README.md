@@ -34,13 +34,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 
 ## Install
 
-Install the v0.3.3 release from npm:
+Install the v0.3.4 release from npm:
 
 ```sh
-pi install npm:@light4/pi-prompt-history@0.3.3
+pi install npm:@light4/pi-prompt-history@0.3.4
 ```
 
-Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.3`.
+Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.4`.
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
 
