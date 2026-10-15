@@ -1,0 +1,24 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "typecheck",
+    name = "TypeScript typecheck",
+    entry = "pnpm run typecheck",
+    language = "system",
+    pass_filenames = false,
+    files = '^((src|test)/.*\.ts|package\.json|pnpm(-lock)?\.yaml|tsconfig\.json)$'
+  },
+  {
+    id = "test",
+    name = "TypeScript tests",
+    entry = "pnpm test",
+    language = "system",
+    pass_filenames = false,
+    files = '^((src|test)/.*\.ts|package\.json|pnpm(-lock)?\.yaml|tsconfig\.json)$'
+  }
+]
