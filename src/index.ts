@@ -157,6 +157,22 @@ function promptText(content: unknown): string {
 		.trim();
 }
 
+/** Format a user bash command the way it was typed, so restoring it re-runs it. */
+export function bashHistoryText(command: string, excludeFromContext = false): string {
+	const trimmed = command.trim();
+	return trimmed ? `${excludeFromContext ? "!!" : "!"}${trimmed}` : "";
+}
+
+/** Extract history text from a user prompt or a `!`/`!!` bash execution message. */
+function messageHistoryText(message: { role: string }): string | undefined {
+	if (message.role === "user") return promptText((message as { content?: unknown }).content);
+	if (message.role === "bashExecution") {
+		const { command, excludeFromContext } = message as { command?: unknown; excludeFromContext?: unknown };
+		return typeof command === "string" ? bashHistoryText(command, excludeFromContext === true) : undefined;
+	}
+	return undefined;
+}
+
 /** Ignore accidental numeric-only submissions such as "1", "2", and "3". */
 export function isMeaningfulPrompt(text: string): boolean {
 	const prompt = text.trim();
@@ -170,9 +186,9 @@ function getPromptHistory(ctx: ExtensionContext): HistoryItem[] {
 
 	for (let index = branch.length - 1; index >= 0; index--) {
 		const entry = branch[index];
-		if (entry.type !== "message" || entry.message.role !== "user") continue;
-		const text = promptText(entry.message.content);
-		if (!isMeaningfulPrompt(text) || seen.has(text)) continue;
+		if (entry.type !== "message") continue;
+		const text = messageHistoryText(entry.message);
+		if (text === undefined || !isMeaningfulPrompt(text) || seen.has(text)) continue;
 		seen.add(text);
 		// Timestamps make current-session and global prompt recency directly comparable.
 		const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
@@ -191,9 +207,9 @@ export async function readSessionHistory(cwd?: string, sessionDir?: string): Pro
 		for (const session of sessions) {
 			try {
 				for (const entry of SessionManager.open(session.path).getEntries()) {
-					if (entry.type !== "message" || entry.message.role !== "user") continue;
-					const text = promptText(entry.message.content);
-					if (!isMeaningfulPrompt(text)) continue;
+					if (entry.type !== "message") continue;
+					const text = messageHistoryText(entry.message);
+					if (text === undefined || !isMeaningfulPrompt(text)) continue;
 					const timestamp = entry.message.timestamp ?? Date.parse(entry.timestamp);
 					history.push({ text, recency: Number.isFinite(timestamp) ? timestamp : 0 });
 				}
@@ -494,6 +510,12 @@ export default function promptHistoryExtension(pi: ExtensionAPI) {
 
 	pi.on("input", (event) => {
 		recordGlobalHistory(event.text, globalHistoryLimit);
+	});
+	// `!`/`!!` commands bypass the input event, so record them here. Returning
+	// undefined lets Pi (or other handlers) execute the command normally.
+	pi.on("user_bash", (event) => {
+		recordGlobalHistory(bashHistoryText(event.command, event.excludeFromContext), globalHistoryLimit);
+		return undefined;
 	});
 
 	pi.registerShortcut(resolveShortcut(config, process.env.PI_PROMPT_HISTORY_SHORTCUT), {
