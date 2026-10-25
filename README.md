@@ -8,6 +8,7 @@ A Pi extension that restores a previous prompt with a fuzzy picker.
 - Type to fuzzy-filter prompts from the **current session's active branch**. The most recently used prompt is listed first by default.
 - Press `Tab` to cycle through **This session → This workspace → Global**. Workspace history includes saved sessions from the current working directory (plus the current session); global history includes every saved Pi session and the local history retained for ephemeral sessions. Workspace and global results show use count and last-used time. The first global search builds a local cache; later searches reuse it. Press `Ctrl+G` to rebuild that cache from the saved sessions.
 - Use `↑` / `↓` to select a result, then `Enter` to put it back into Pi's editor.
+- `!` / `!!` bash commands are recorded too, with their prefix, so a restored command runs again as typed.
 - It only restores text; it does **not** submit the prompt.
 - `Esc` or `Ctrl+C` dismisses the picker.
 
@@ -34,13 +35,13 @@ Use any Pi keybinding format (for example `alt+r` or `ctrl+shift+r`). If the sel
 
 ## Install
 
-Install the v0.3.4 release from npm:
+Install the v0.3.5 release from npm:
 
 ```sh
-pi install npm:@light4/pi-prompt-history@0.3.4
+pi install npm:@light4/pi-prompt-history@0.3.5
 ```
 
-Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.4`.
+Or install the same release from GitHub: `pi install git:github.com/light4/pi-prompt-history@v0.3.5`.
 
 After changing the shortcut configuration, restart Pi or run `/reload`.
 
